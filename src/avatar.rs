@@ -1,6 +1,6 @@
 use godot::{
     classes::{
-        CharacterBody2D, ICharacterBody2D, Input, Node,
+        AnimatedSprite2D, CharacterBody2D, ICharacterBody2D, Input, Node, Node2D,
         character_body_2d::MotionMode,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
@@ -8,16 +8,26 @@ use godot::{
         },
     },
     obj::{Base, Singleton, WithBaseField},
-    register::{GodotClass, godot_api},
+    register::{
+        GodotClass, godot_api,
+        info::{PropertyInfo, PropertyUsageFlags},
+    },
 };
 
-use crate::RpgDirection;
+use crate::{
+    RpgDirection,
+    avatar::{character_sprite::CharacterSprite2D, follower::FollowerSet},
+};
 
 mod interact;
 
+mod character_sprite;
+
+mod follower;
+
 #[derive(GodotClass)]
-#[class(init, base = CharacterBody2D, rename = RpgPlayer2D)]
-pub struct RpgPlayer2d {
+#[class(init, base = CharacterBody2D, rename = RpgCharacter2D)]
+pub struct RpgCharacter2d {
     base: Base<CharacterBody2D>,
 
     /// Movement speed, in units(?) per second.
@@ -28,7 +38,7 @@ pub struct RpgPlayer2d {
 
     /// The initial direction in which to face.
     #[export]
-    #[var(pub, set)]
+    #[var]
     facing_dir: RpgDirection,
 
     /// The maximum distance from which the player can interact with things.
@@ -39,27 +49,32 @@ pub struct RpgPlayer2d {
 
     /// whether an interact raycast is queued for the next physics process
     interact_queued: bool,
+
+    sprite: Option<CharacterSprite2D>,
+
+    followers: FollowerSet,
 }
 
 #[godot_api]
-impl RpgPlayer2d {
+impl RpgCharacter2d {
     /// Emitted after interacting with something.
     #[signal]
     fn interacted_with(node: Gd<Node>, ray_intersection: VarDictionary);
 
     #[func]
-    pub fn set_facing_dir(&mut self, dir: RpgDirection) {
-        todo!()
+    pub fn facing_vec(&self) -> Vector2 {
+        self.facing_dir.to_vector()
     }
 
     #[func]
-    pub fn facing_vec(&self) -> Vector2 {
-        todo!()
+    pub fn push_follower(&mut self, follower: Gd<Node2D>) {
+        self.followers
+            .push_follower(self.base().get_global_position(), follower);
     }
 }
 
 #[godot_api]
-impl ICharacterBody2D for RpgPlayer2d {
+impl ICharacterBody2D for RpgCharacter2d {
     fn enter_tree(&mut self) {
         if !self.base().is_in_group("avatar") {
             self.base_mut().add_to_group("avatar");
@@ -67,8 +82,24 @@ impl ICharacterBody2D for RpgPlayer2d {
         self.base_mut().set_motion_mode(MotionMode::FLOATING);
     }
 
+    fn on_validate_property(&self, info: &mut PropertyInfo) {
+        if info.property_name == "motion_mode" {
+            info.usage |= PropertyUsageFlags::READ_ONLY;
+        }
+    }
+
     fn ready(&mut self) {
         // TODO :: sprite
+
+        if let Some(sprite) = self
+            .base()
+            .get_children()
+            .iter_shared()
+            .find_map(|child| child.try_cast::<AnimatedSprite2D>().ok())
+        {
+            let sprite = CharacterSprite2D::new(sprite, self.facing_dir);
+            self.sprite = Some(sprite);
+        }
     }
 
     fn physics_process(&mut self, _delta: f32) {
@@ -84,17 +115,26 @@ impl ICharacterBody2D for RpgPlayer2d {
         let input_vec =
             Input::singleton().get_vector("move_left", "move_right", "move_up", "move_down");
 
-        // update velocity
+        let old_pos = self.base().get_global_position();
+
+        // update velocity & sprite
         if godot::global::is_zero_approx(input_vec.length() as f64) {
-            // we're not moving
+            // we're not trying to move
             self.base_mut().set_velocity(Vector2::ZERO);
-            // TODO :: stop animation
+            // update sprite
+            if let Some(sprite) = self.sprite.as_mut() {
+                sprite.ensure_stopped();
+            }
         } else {
-            // we're moving
-            // TODO :: update facing
+            // we're trying to move
+            self.facing_dir = RpgDirection::from_vec(input_vec);
             let new_vel = self.facing_vec() * self.move_speed;
             self.base_mut().set_velocity(new_vel);
-            // TODO :: walk animation
+            // update sprite
+            if let Some(sprite) = self.sprite.as_mut() {
+                sprite.set_dir(self.facing_dir);
+                sprite.ensure_playing();
+            }
         }
 
         // move the character
@@ -111,7 +151,7 @@ impl ICharacterBody2D for RpgPlayer2d {
                 else {
                     continue;
                 };
-                // collide with everything
+                // if the thing we collided with has an on_collision function, call that
                 if collider.has_method(ON_COLLISION_FN) {
                     collider.call(
                         ON_COLLISION_FN,
@@ -119,6 +159,23 @@ impl ICharacterBody2D for RpgPlayer2d {
                     );
                 }
             }
+        }
+
+        // update followers
+        let new_pos = self.base().get_global_position();
+        let mv_vec = new_pos - old_pos;
+        if mv_vec.length_squared()
+            < Vector2::new(
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            )
+            .length_squared()
+        {
+            // we didn't actually move (even if we tried), so let's have everybody take a break
+            self.followers.stop();
+        } else {
+            // everybody keeps going
+            self.followers.push_position(new_pos);
         }
     }
 }

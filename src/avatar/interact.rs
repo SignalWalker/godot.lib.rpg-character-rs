@@ -19,7 +19,7 @@ pub(super) enum InteractError {
     QueryCreation(Gd<World2D>, Gd<PhysicsDirectSpaceState2D>),
 }
 
-impl super::RpgPlayer2d {
+impl super::RpgCharacter2d {
     /// # Safety
     ///
     /// Must only be called during physics processing.
