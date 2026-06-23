@@ -1,0 +1,11 @@
+[package]
+name = "rpg-character-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+godot = "^0.5"
+
+tracing = "^0.1"
+
+thiserror = "^2.0"
