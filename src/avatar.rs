@@ -1,6 +1,6 @@
 use godot::{
     classes::{
-        AnimatedSprite2D, CharacterBody2D, ICharacterBody2D, Input, Node, Node2D,
+        AnimatedSprite2D, CharacterBody2D, ICharacterBody2D, Input, InputEvent, Node, Node2D,
         character_body_2d::MotionMode,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
@@ -99,6 +99,19 @@ impl ICharacterBody2D for RpgCharacter2d {
         {
             let sprite = CharacterSprite2D::new(sprite, self.facing_dir);
             self.sprite = Some(sprite);
+        }
+    }
+
+    fn unhandled_input(&mut self, event: Gd<InputEvent>) {
+        let Some(mut vp) = self.base().get_viewport() else {
+            return;
+        };
+        if event.is_action_pressed("toggle_menu") {
+            tracing::error!("todo: toggle menu");
+            vp.set_input_as_handled();
+        } else if event.is_action_pressed("interact") {
+            self.interact_queued = true;
+            vp.set_input_as_handled();
         }
     }
 
