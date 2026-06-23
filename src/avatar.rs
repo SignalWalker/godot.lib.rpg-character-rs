@@ -16,7 +16,7 @@ use crate::RpgDirection;
 mod interact;
 
 #[derive(GodotClass)]
-#[class(init, base = CharacterBody2D)]
+#[class(init, base = CharacterBody2D, rename = RpgPlayer2D)]
 pub struct RpgPlayer2d {
     base: Base<CharacterBody2D>,
 
