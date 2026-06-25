@@ -145,11 +145,13 @@ impl FollowerSet {
     }
 
     pub(super) fn push_frame(&mut self, pos: Vector2, dir: RpgDirection) {
-        // when we push a frame to a follower, if it popped a frame, it returns that frame.
+        // if pushing a frame to a follower overflows its frame buffer and causes it to pop the back
+        // frame, the follower applies that back frame to itsel and returns that frame.
+        //
         // So, here, we:
         // 1. push a frame
         // 2. if that caused a frame to pop:
-        //   3. repeat with the new frame and the next follower
+        //   3. repeat with the popped frame and the next follower
         let mut frame = FollowerFrame {
             position: pos,
             facing: dir,
