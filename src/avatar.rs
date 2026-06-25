@@ -1,6 +1,7 @@
 use godot::{
     classes::{
-        AnimatedSprite2D, CharacterBody2D, ICharacterBody2D, Input, InputEvent, Node, Node2D,
+        AnimatedSprite2D, Area2D, CharacterBody2D, ICharacterBody2D, Input, InputEvent, Node,
+        Node2D,
         character_body_2d::MotionMode,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
@@ -118,7 +119,7 @@ impl RpgCharacter2d {
             // is using this library on any platform with pointers smaller than 32 bits, but, you
             // know, just in case...
             usize::try_from(self.follower_delay).unwrap_or(12),
-            self.base().get_global_position(),
+            self.base().get_global_position() - Vector2 { x: 0.0, y: 1.0 },
             self.facing_dir,
         );
     }
