@@ -13,6 +13,12 @@ use crate::{RpgDirection, avatar::CharacterSprite2D};
 //     UnrecognizedType(Gd<Node2D>),
 // }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FollowerFrame {
+    position: Vector2,
+    facing: RpgDirection,
+}
+
 enum FollowerNode {
     AnimatedSprite2D(CharacterSprite2D),
     Node2d(Gd<Node2D>),
@@ -37,15 +43,14 @@ impl FollowerNode {
         }
     }
 
-    fn set_position(&mut self, prev: Vector2, pos: Vector2) {
+    fn apply_frame(&mut self, pos: FollowerFrame) {
         match self {
             FollowerNode::AnimatedSprite2D(sprite) => {
-                let dir = RpgDirection::from_vec(pos - prev);
-                sprite.set_dir(dir);
+                sprite.set_dir(pos.facing);
                 sprite.ensure_playing();
-                sprite.sprite.set_global_position(pos);
+                sprite.sprite.set_global_position(pos.position);
             }
-            FollowerNode::Node2d(n) => n.set_global_position(pos),
+            FollowerNode::Node2d(n) => n.set_global_position(pos.position),
         }
     }
 
@@ -54,23 +59,15 @@ impl FollowerNode {
             c.ensure_stopped()
         }
     }
-
-    fn current_position(&self) -> Vector2 {
-        match self {
-            Self::AnimatedSprite2D(c) => c.sprite.get_global_position(),
-            Self::Node2d(n) => n.get_global_position(),
-        }
-    }
 }
 
 pub(super) struct Follower {
+    /// the node this follower controls
     node: FollowerNode,
     /// the number of frames until this starts following
     delay_frames: usize,
     /// the position queue
-    positions: VecDeque<Vector2>,
-    /// the previous position
-    prev_pos: Vector2,
+    frames: VecDeque<FollowerFrame>,
 }
 
 impl std::fmt::Display for Follower {
@@ -82,18 +79,21 @@ impl std::fmt::Display for Follower {
 impl Follower {
     pub(super) fn from_gd(node: Gd<Node2D>, delay_frames: usize) -> Self {
         Self {
-            prev_pos: node.get_global_position(),
             node: FollowerNode::from_gd(node),
             delay_frames,
-            positions: VecDeque::with_capacity(delay_frames + 1),
+            frames: VecDeque::with_capacity(delay_frames + 1),
         }
     }
 
-    pub(super) fn push_position(&mut self, pos: Vector2) -> Option<Vector2> {
-        self.positions.push_front(pos);
-        if self.positions.len() >= self.delay_frames {
-            let next = self.positions.pop_back().unwrap();
-            self.set_position(next);
+    fn next_frame(&self) -> Option<&FollowerFrame> {
+        self.frames.back()
+    }
+
+    fn push_frame(&mut self, frame: FollowerFrame) -> Option<FollowerFrame> {
+        self.frames.push_front(frame);
+        if self.frames.len() >= self.delay_frames {
+            let next = self.frames.pop_back().unwrap();
+            self.node.apply_frame(next);
             Some(next)
         } else {
             None
@@ -104,55 +104,59 @@ impl Follower {
         self.node.stop();
     }
 
-    fn set_position(&mut self, pos: Vector2) {
-        self.node.set_position(self.prev_pos, pos);
-        self.prev_pos = pos;
-    }
-
-    pub(super) fn reset_to(&mut self, pos: Vector2) {
-        self.positions.clear();
-        self.set_position(pos);
+    pub(super) fn reset_to(&mut self, position: Vector2, facing: RpgDirection) {
+        self.frames.clear();
+        self.node.apply_frame(FollowerFrame { position, facing });
         self.node.stop();
-    }
-
-    pub(super) fn current_position(&self) -> Vector2 {
-        self.node.current_position()
     }
 }
 
 pub(super) struct FollowerSet {
-    delay_frames: usize,
     followers: Vec<Follower>,
 }
 
 impl Default for FollowerSet {
     fn default() -> Self {
-        Self::new(12)
+        Self::new()
     }
 }
 
 impl FollowerSet {
-    pub(super) fn new(delay_frames: usize) -> Self {
+    pub(super) const fn new() -> Self {
         Self {
-            delay_frames,
             followers: Vec::new(),
         }
     }
 
-    pub(super) fn push_follower(&mut self, target_pos: Vector2, follower: Gd<Node2D>) {
-        let mut res = Follower::from_gd(follower, self.delay_frames);
-        if let Some(back) = self.followers.last() {
-            res.reset_to(back.current_position());
+    pub(super) fn push_follower(
+        &mut self,
+        follower: Gd<Node2D>,
+        delay_frames: usize,
+        leader_pos: Vector2,
+        leader_facing: RpgDirection,
+    ) {
+        let mut res = Follower::from_gd(follower, delay_frames);
+        if let Some(back) = self.followers.last().and_then(Follower::next_frame) {
+            res.reset_to(back.position, back.facing);
         } else {
-            res.reset_to(target_pos);
+            res.reset_to(leader_pos, leader_facing);
         }
         self.followers.push(res)
     }
 
-    pub(super) fn push_position(&mut self, mut pos: Vector2) {
+    pub(super) fn push_frame(&mut self, pos: Vector2, dir: RpgDirection) {
+        // when we push a frame to a follower, if it popped a frame, it returns that frame.
+        // So, here, we:
+        // 1. push a frame
+        // 2. if that caused a frame to pop:
+        //   3. repeat with the new frame and the next follower
+        let mut frame = FollowerFrame {
+            position: pos,
+            facing: dir,
+        };
         let mut iter = self.followers.iter_mut();
-        while let Some(next_pos) = iter.next().and_then(|follower| follower.push_position(pos)) {
-            pos = next_pos;
+        while let Some(next_frame) = iter.next().and_then(|follower| follower.push_frame(frame)) {
+            frame = next_frame;
         }
     }
 

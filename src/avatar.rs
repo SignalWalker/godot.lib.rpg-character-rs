@@ -30,29 +30,73 @@ mod follower;
 pub struct RpgCharacter2d {
     base: Base<CharacterBody2D>,
 
-    /// Movement speed, in units(?) per second.
-    #[export]
-    #[var]
-    #[init(val = 128.0)]
-    move_speed: f32,
-
-    /// The initial direction in which to face.
+    /// The direction in which this character is facing.
     #[export]
     #[var]
     facing_dir: RpgDirection,
 
+    /// Movement speed, in units(?) per second.
+    #[export]
+    #[export_group(name = "Movement")]
+    #[var]
+    #[init(val = 128.0)]
+    move_speed: f32,
+
+    /// Whether movement acceleration is enabled.
+    #[export]
+    #[export_subgroup(name = "Acceleration")]
+    #[var]
+    #[init(val = false)]
+    acceleration_enabled: bool,
+
+    /// The number of physics frames before movement accelerates.
+    #[export]
+    #[var]
+    #[init(val = 180)]
+    acceleration_delay: u32,
+
+    /// Accelerated movement speed, in units(?) per second.
+    #[export]
+    #[var]
+    #[init(val = 192.0)]
+    acceleration_speed: f32,
+
     /// The maximum distance from which the player can interact with things.
     #[export]
+    #[export_group(name = "Interaction")]
     #[var]
     #[init(val = 24.0)]
     interact_distance: f32,
+
+    /// The number of frames of delay between this character's position and the positions of its followers.
+    ///
+    /// Note: changes only apply to followers added after the change.
+    #[export]
+    #[export_group(name = "Followers")]
+    #[var]
+    #[init(val = 12)]
+    follower_delay: u32,
 
     /// whether an interact raycast is queued for the next physics process
     interact_queued: bool,
 
     sprite: Option<CharacterSprite2D>,
 
+    /// The number of frames for which we've been moving without stopping
+    acceleration_accumulator: u32,
+
     followers: FollowerSet,
+}
+
+impl RpgCharacter2d {
+    /// The character's current movement speed, taking into account acceleration.
+    pub const fn current_move_speed(&self) -> f32 {
+        if self.acceleration_enabled && self.acceleration_accumulator >= self.acceleration_delay {
+            self.acceleration_speed
+        } else {
+            self.move_speed
+        }
+    }
 }
 
 #[godot_api]
@@ -68,8 +112,15 @@ impl RpgCharacter2d {
 
     #[func]
     pub fn push_follower(&mut self, follower: Gd<Node2D>) {
-        self.followers
-            .push_follower(self.base().get_global_position(), follower);
+        self.followers.push_follower(
+            follower,
+            // this should basically never actually fail to convert because i don't imagine anyone
+            // is using this library on any platform with pointers smaller than 32 bits, but, you
+            // know, just in case...
+            usize::try_from(self.follower_delay).unwrap_or(12),
+            self.base().get_global_position(),
+            self.facing_dir,
+        );
     }
 }
 
@@ -134,6 +185,8 @@ impl ICharacterBody2D for RpgCharacter2d {
         if godot::global::is_zero_approx(input_vec.length() as f64) {
             // we're not trying to move
             self.base_mut().set_velocity(Vector2::ZERO);
+            // update acceleration accumulator
+            self.acceleration_accumulator = 0;
             // update sprite
             if let Some(sprite) = self.sprite.as_mut() {
                 sprite.ensure_stopped();
@@ -141,8 +194,12 @@ impl ICharacterBody2D for RpgCharacter2d {
         } else {
             // we're trying to move
             self.facing_dir = RpgDirection::from_vec(input_vec);
-            let new_vel = self.facing_vec() * self.move_speed;
+            let new_vel = self.facing_vec() * self.current_move_speed();
             self.base_mut().set_velocity(new_vel);
+            // update acceleration accumulator
+            // // i don't think anyone will ever actually move for 2^32 straight frames, but, you know,
+            // // might as well account for the pannenkoeks of the world
+            self.acceleration_accumulator = self.acceleration_accumulator.saturating_add(1);
             // update sprite
             if let Some(sprite) = self.sprite.as_mut() {
                 sprite.set_dir(self.facing_dir);
@@ -188,7 +245,7 @@ impl ICharacterBody2D for RpgCharacter2d {
             self.followers.stop();
         } else {
             // everybody keeps going
-            self.followers.push_position(new_pos);
+            self.followers.push_frame(new_pos, self.facing_dir);
         }
     }
 }

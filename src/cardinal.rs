@@ -10,9 +10,9 @@ use godot::{
 #[godot(via = u8)]
 #[repr(u8)]
 pub enum RpgDirection {
-    #[default]
     East = 0,
     SouthEast = 1,
+    #[default]
     South = 2,
     SouthWest = 3,
     West = 4,
