@@ -32,7 +32,7 @@ pub struct RpgCharacter2d {
 
     /// The direction in which this character is facing.
     #[export]
-    #[var]
+    #[var(pub, set)]
     facing_dir: RpgDirection,
 
     /// Movement speed, in units(?) per second.
@@ -106,6 +106,14 @@ impl RpgCharacter2d {
     fn interacted_with(node: Gd<Node>, ray_intersection: VarDictionary);
 
     #[func]
+    pub fn set_facing_dir(&mut self, dir: RpgDirection) {
+        self.facing_dir = dir;
+        if let Some(sprite) = self.sprite.as_mut() {
+            sprite.set_dir(dir);
+        }
+    }
+
+    #[func]
     pub fn facing_vec(&self) -> Vector2 {
         self.facing_dir.to_vector()
     }
@@ -118,8 +126,11 @@ impl RpgCharacter2d {
             // is using this library on any platform with pointers smaller than 32 bits, but, you
             // know, just in case...
             usize::try_from(self.follower_delay).unwrap_or(12),
-            self.base().get_global_position() - Vector2 { x: 0.0, y: 1.0 },
-            self.facing_dir,
+            1.0,
+            follower::FollowerFrame {
+                position: self.base().get_global_position(),
+                facing: self.facing_dir,
+            },
         );
     }
 }

@@ -50,7 +50,7 @@ impl RpgDirection {
         (((((angle * scl) + 1.0).round() as u32) % DIVISIONS) / 2) as u8
     }
 
-    pub fn from_angle(angle: f32) -> Self {
+    pub fn from_radians(angle: f32) -> Self {
         match Self::angle_index_generic::<16>(angle) {
             0 => Self::West,
             1 => Self::NorthWest,
@@ -66,7 +66,7 @@ impl RpgDirection {
         }
     }
 
-    pub fn from_angle_cardinal(angle: f32) -> Self {
+    pub fn from_radians_cardinal(angle: f32) -> Self {
         match Self::angle_index_generic::<8>(angle) {
             0 => Self::West,
             1 => Self::North,
@@ -79,11 +79,11 @@ impl RpgDirection {
     }
 
     pub fn from_vec(vec: Vector2) -> Self {
-        Self::from_angle(vec.angle())
+        Self::from_radians(vec.angle())
     }
 
     pub fn from_vec_cardinal(vec: Vector2) -> Self {
-        Self::from_angle_cardinal(vec.angle())
+        Self::from_radians_cardinal(vec.angle())
     }
 
     #[inline]

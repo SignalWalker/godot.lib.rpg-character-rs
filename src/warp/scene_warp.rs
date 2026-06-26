@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
-use futures::TryFutureExt as _;
 use godot::{
     classes::{
-        Area2D, IArea2D, Node, Node2D, PackedScene,
+        AnimationPlayer, Area2D, IArea2D, Node, Node2D, PackedScene,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
             ZipReader::{GString, NodePath},
@@ -15,7 +14,7 @@ use godot::{
 };
 use scene_manager::{SceneManager, gd_api::SceneManagerNode};
 
-use crate::RpgCharacter2d;
+use crate::{RpgCharacter2d, RpgDirection};
 
 #[derive(GodotClass)]
 #[class(init, base = Area2D, rename = SceneWarp2D)]
@@ -145,6 +144,11 @@ impl SceneWarp2d {
         };
         // reposition
         av.set_global_position(target.get_global_position());
+        // redirect
+        let rotation = target.get_global_rotation();
+        let direction = RpgDirection::from_radians(rotation);
+        tracing::trace!(%rotation, ?direction, "marker");
+        av.bind_mut().set_facing_dir(direction);
     }
 
     fn warp_with_transition(
@@ -157,8 +161,14 @@ impl SceneWarp2d {
             tracing::error!(transition = %transition_scene, "could not instantiate scene transition");
             return;
         };
+        let transition = match transition.try_cast::<AnimationPlayer>() {
+            Ok(t) => t,
+            Err(node) => {
+                tracing::error!(expected = "AnimationPlayer", found = %node, "unrecognized transition type");
+                return;
+            }
+        };
         // begin loading next scene
-        let target_path = self.target_path.clone();
         let next_scene = match scene_manager::resource::load_threaded_to_node(
             self.target_scene.clone(),
             CacheMode::REUSE,
@@ -169,19 +179,13 @@ impl SceneWarp2d {
                 tracing::error!(%error, "could not start loading target scene");
                 return;
             }
-        }
-        .inspect_ok(move |target_scene| {
-            // find and reposition the player character in the new scene
-            //
-            // (we're doing this in the future task so that this happens while the player can't
-            // see it)
-            Self::find_and_reposition_avatar(target_scene, &target_path)
-        });
+        };
         // defer transition start to idle time
+        let target_path = self.target_path.clone();
         self.run_deferred(move |_: &mut Self| {
             // start the scene transition
-            let transition_task =
-                match unsafe { scene_manager.transition_scene(transition, next_scene) } {
+            let transition_start =
+                match unsafe { scene_manager.start_scene_transition(transition, next_scene) } {
                     Ok(t) => t,
                     Err(error) => {
                         tracing::error!(%error, "could not start scene transition");
@@ -190,8 +194,25 @@ impl SceneWarp2d {
                 };
             // run the scene transition
             godot::task::spawn(async move {
-                if let Err(error) = transition_task.await {
-                    tracing::error!(%error, "could not finish scene transition");
+                // wait for the next scene to be loaded and for the transition to be ready for scene
+                // swapping
+                let transition = match transition_start.await {
+                    Ok(t) => t,
+                    Err(error) => {
+                        tracing::error!(%error, "scene transition failed during start phase");
+                        return;
+                    }
+                };
+
+                // find and reposition the player character in the new scene
+                //
+                // (we're doing this during the transition so that this happens while the player can't
+                // see it)
+                Self::find_and_reposition_avatar(transition.target_node(), &target_path);
+
+                // finish the scene transition
+                if let Err(error) = transition.finish().await {
+                    tracing::error!(%error, "scene transition failed during finish phase");
                 }
             });
         });

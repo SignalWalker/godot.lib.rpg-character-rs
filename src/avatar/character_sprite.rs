@@ -25,16 +25,21 @@ pub(super) struct CharacterSprite2D {
     directions: SpriteDirections,
 
     anim_dir: RpgDirection,
+
+    prev_fr_pr: Option<(i32, f32)>,
 }
 
 impl CharacterSprite2D {
     pub(super) fn new(sprite: Gd<AnimatedSprite2D>, initial_dir: RpgDirection) -> Self {
         let directions = Self::check_animations(&sprite);
-        Self {
+        let mut res = Self {
             directions,
             sprite,
             anim_dir: directions.nearest_to(RpgDirection::East, initial_dir),
-        }
+            prev_fr_pr: None,
+        };
+        res.set_dir(initial_dir);
+        res
     }
 
     const fn get_anim_name_for(dir: RpgDirection) -> &'static str {
@@ -90,11 +95,17 @@ impl CharacterSprite2D {
     pub(super) fn ensure_playing(&mut self) {
         if !self.sprite.is_playing() {
             self.sprite.play();
+            if let Some((fr, pr)) = self.prev_fr_pr.take() {
+                self.sprite.set_frame_and_progress(fr, pr);
+            }
         }
     }
 
     pub(super) fn ensure_stopped(&mut self) {
-        self.sprite.stop();
-        self.sprite.set_frame(1);
+        if self.sprite.is_playing() {
+            self.prev_fr_pr = Some((self.sprite.get_frame(), self.sprite.get_frame_progress()));
+            self.sprite.stop();
+            self.sprite.set_frame(1);
+        }
     }
 }

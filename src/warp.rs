@@ -9,12 +9,12 @@ use godot::{
     register::{GodotClass, godot_api},
 };
 
+use crate::{RpgCharacter2d, RpgDirection};
+
 #[cfg(feature = "scene-warp")]
 mod scene_warp;
 #[cfg(feature = "scene-warp")]
 pub use scene_warp::*;
-
-use crate::RpgCharacter2d;
 
 #[derive(GodotClass)]
 #[class(init, base = Area2D, rename = Warp2D)]
@@ -30,6 +30,11 @@ pub struct Warp2d {
     #[export]
     #[var(pub, set)]
     transition: Option<Gd<PackedScene>>,
+
+    /// Whether to make the warped character face towards the direction towards which the target node is rotated.
+    #[export]
+    #[var]
+    rotate: bool,
 
     transition_node_cache: RefCell<Option<Gd<Node>>>,
 }
@@ -92,7 +97,15 @@ impl Warp2d {
             // TODO :: transition animation
         }
 
+        // reposition
         av.set_global_position(target.get_global_position());
+        if self.rotate {
+            // redirect
+            av.bind_mut()
+                .set_facing_dir(RpgDirection::from_radians(target.get_global_rotation()));
+        }
+
+        // emit warp signal
         self.signals().warped().emit(&av, &target);
     }
 }
