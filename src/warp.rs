@@ -14,7 +14,7 @@ mod scene_warp;
 #[cfg(feature = "scene-warp")]
 pub use scene_warp::*;
 
-use crate::{RpgCharacter2d, RpgDirection};
+use crate::RpgCharacter2d;
 
 #[derive(GodotClass)]
 #[class(init, base = Area2D, rename = Warp2D)]

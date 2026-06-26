@@ -11,7 +11,8 @@ tracing = "^0.1"
 thiserror = "^2.0"
 
 scene-manager = { git = "https://github.com/SignalWalker/godot.lib.scene-manager-rs", optional = true }
+futures = { version = "^0.3", optional = true }
 
 [features]
 default = ["scene-warp"]
-scene-warp = ["dep:scene-manager"]
+scene-warp = ["dep:scene-manager", "dep:futures"]

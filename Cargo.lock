@@ -338,6 +338,7 @@ dependencies = [
 name = "rpg-character"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "godot",
  "scene-manager",
  "thiserror",

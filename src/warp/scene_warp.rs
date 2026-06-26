@@ -1,5 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
+use futures::TryFutureExt as _;
 use godot::{
     classes::{
         Area2D, IArea2D, Node, Node2D, PackedScene,
@@ -23,25 +24,31 @@ pub struct SceneWarp2d {
 
     /// The scene to which to warp.
     #[export]
-    #[var]
+    #[var(
+        hint = FILE,
+        hint_string = "*.tscn"
+    )]
     target_scene: GString,
 
-    /// The node, in the target scene, to which to warp.
+    /// The path the the node, relative to the root of the target scene, to which to warp.
     #[export]
     #[var]
-    target: NodePath,
+    target_path: GString,
 
     /// A scene transition.
     #[export]
     #[var]
     transition: Option<Gd<PackedScene>>,
+
+    warping: bool,
 }
 
 #[godot_api]
 impl SceneWarp2d {
     #[func]
     pub fn get_target_node(&self) -> Option<Gd<Node2D>> {
-        self.base().try_get_node_as(&self.target)
+        self.base()
+            .try_get_node_as(&NodePath::from(&self.target_path))
     }
 }
 
@@ -71,10 +78,18 @@ impl SceneWarp2d {
             }
         }
 
-        if !node.try_cast::<RpgCharacter2d>().is_ok() {
-            // we only want to warp player characters
+        if self.warping {
+            // i honestly don't know why, but, for some reason, areas seem to get double
+            // body_entered signals, so we'll check for that and skip if it happens
             return;
         }
+
+        let Ok(_av) = node.try_cast::<RpgCharacter2d>() else {
+            // we only want to warp player characters
+            return;
+        };
+
+        self.warping = true;
 
         let Some(scene_manager) = get_scene_manager(self) else {
             // we already emitted errors
@@ -82,6 +97,7 @@ impl SceneWarp2d {
         };
 
         if let Some(transition_scene) = self.transition.clone() {
+            self.warping = true;
             self.warp_with_transition(transition_scene, scene_manager);
         } else {
             // load the target scene
@@ -108,7 +124,7 @@ impl SceneWarp2d {
                     return;
                 };
                 // find and reposition the player character
-                Self::find_and_reposition_avatar(&target_scene, &warp.target);
+                Self::find_and_reposition_avatar(&target_scene, &warp.target_path);
             });
         }
 
@@ -116,26 +132,16 @@ impl SceneWarp2d {
         // self.signals().warped().emit(&av, &target);
     }
 
-    fn find_and_reposition_avatar(scene: &Gd<Node>, target_path: &NodePath) {
+    fn find_and_reposition_avatar(scene: &Gd<Node>, target_path: &GString) {
         // find the target node
-        let Some(target) = scene.try_get_node_as::<Node2D>(target_path) else {
+        let Some(target) = scene.try_get_node_as::<Node2D>(&NodePath::from(target_path)) else {
             tracing::error!(path = %target_path, "could not find scene warp target node");
             return;
         };
         // find the player character
-        let Some(av) = scene
-            .get_tree_or_null()
-            .and_then(|tree| tree.get_first_node_in_group("avatar"))
-        else {
+        let Some(mut av) = crate::find_first_avatar(scene.clone()) else {
             tracing::error!("warped to scene without avatar");
             return;
-        };
-        let mut av = match av.try_cast::<RpgCharacter2d>() {
-            Ok(a) => a,
-            Err(n) => {
-                tracing::error!(expected = "RpgCharacter2D", found = %n, "scene warp target has avatar, but it is not of the expected type");
-                return;
-            }
         };
         // reposition
         av.set_global_position(target.get_global_position());
@@ -152,6 +158,7 @@ impl SceneWarp2d {
             return;
         };
         // begin loading next scene
+        let target_path = self.target_path.clone();
         let next_scene = match scene_manager::resource::load_threaded_to_node(
             self.target_scene.clone(),
             CacheMode::REUSE,
@@ -162,9 +169,16 @@ impl SceneWarp2d {
                 tracing::error!(%error, "could not start loading target scene");
                 return;
             }
-        };
+        }
+        .inspect_ok(move |target_scene| {
+            // find and reposition the player character in the new scene
+            //
+            // (we're doing this in the future task so that this happens while the player can't
+            // see it)
+            Self::find_and_reposition_avatar(target_scene, &target_path)
+        });
         // defer transition start to idle time
-        self.run_deferred(move |warp: &mut Self| {
+        self.run_deferred(move |_: &mut Self| {
             // start the scene transition
             let transition_task =
                 match unsafe { scene_manager.transition_scene(transition, next_scene) } {
@@ -174,18 +188,11 @@ impl SceneWarp2d {
                         return;
                     }
                 };
-            // wait for the scene transition to finish
-            let target_path = warp.target.clone();
+            // run the scene transition
             godot::task::spawn(async move {
-                let (new, _) = match transition_task.await {
-                    Ok(r) => r,
-                    Err(error) => {
-                        tracing::error!(%error, "could not finish scene transition");
-                        return;
-                    }
-                };
-                // find and reposition the player character in the new scene
-                Self::find_and_reposition_avatar(&new, &target_path);
+                if let Err(error) = transition_task.await {
+                    tracing::error!(%error, "could not finish scene transition");
+                }
             });
         });
     }

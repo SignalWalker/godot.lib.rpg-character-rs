@@ -1,7 +1,6 @@
 use godot::{
     classes::{
-        AnimatedSprite2D, Area2D, CharacterBody2D, ICharacterBody2D, Input, InputEvent, Node,
-        Node2D,
+        AnimatedSprite2D, CharacterBody2D, ICharacterBody2D, Input, InputEvent, Node, Node2D,
         character_body_2d::MotionMode,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
