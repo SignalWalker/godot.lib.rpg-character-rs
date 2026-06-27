@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 godot = "^0.5"
 
+godot-utils = { git = "https://github.com/SignalWalker/godot.lib.godot-utils" }
+
 tracing = "^0.1"
 
 thiserror = "^2.0"

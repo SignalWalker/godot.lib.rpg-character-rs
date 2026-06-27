@@ -4,6 +4,8 @@ use godot::{
     register::property::{Export, Var},
 };
 
+mod gd_api;
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, GodotConvert, Var, Export, Default,
 )]
@@ -19,6 +21,12 @@ pub enum RpgDirection {
     NorthWest = 5,
     North = 6,
     NorthEast = 7,
+}
+
+impl From<RpgDirection> for i64 {
+    fn from(value: RpgDirection) -> Self {
+        value as i64
+    }
 }
 
 const DIR_VECTORS: [Vector2; 8] = {

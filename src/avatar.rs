@@ -14,14 +14,9 @@ use godot::{
     },
 };
 
-use crate::{
-    RpgDirection,
-    avatar::{character_sprite::CharacterSprite2D, follower::FollowerSet},
-};
+use crate::{RpgDirection, avatar::follower::FollowerSet, character_sprite::CharacterSprite2d};
 
 mod interact;
-
-mod character_sprite;
 
 mod follower;
 
@@ -80,7 +75,7 @@ pub struct RpgCharacter2d {
     /// whether an interact raycast is queued for the next physics process
     interact_queued: bool,
 
-    sprite: Option<CharacterSprite2D>,
+    sprite: Option<CharacterSprite2d>,
 
     /// The number of frames for which we've been moving without stopping
     acceleration_accumulator: u32,
@@ -159,7 +154,7 @@ impl ICharacterBody2D for RpgCharacter2d {
             .iter_shared()
             .find_map(|child| child.try_cast::<AnimatedSprite2D>().ok())
         {
-            let sprite = CharacterSprite2D::new(sprite, self.facing_dir);
+            let sprite = CharacterSprite2d::new(sprite, self.facing_dir);
             self.sprite = Some(sprite);
         }
     }

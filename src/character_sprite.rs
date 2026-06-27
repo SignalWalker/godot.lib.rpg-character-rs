@@ -19,8 +19,8 @@ impl SpriteDirections {
     }
 }
 
-pub(super) struct CharacterSprite2D {
-    pub(super) sprite: Gd<AnimatedSprite2D>,
+pub struct CharacterSprite2d {
+    pub sprite: Gd<AnimatedSprite2D>,
 
     directions: SpriteDirections,
 
@@ -29,8 +29,8 @@ pub(super) struct CharacterSprite2D {
     prev_fr_pr: Option<(i32, f32)>,
 }
 
-impl CharacterSprite2D {
-    pub(super) fn new(sprite: Gd<AnimatedSprite2D>, initial_dir: RpgDirection) -> Self {
+impl CharacterSprite2d {
+    pub fn new(sprite: Gd<AnimatedSprite2D>, initial_dir: RpgDirection) -> Self {
         let directions = Self::check_animations(&sprite);
         let mut res = Self {
             directions,
@@ -78,7 +78,7 @@ impl CharacterSprite2D {
         }
     }
 
-    pub(super) fn set_dir(&mut self, dir: RpgDirection) {
+    pub fn set_dir(&mut self, dir: RpgDirection) {
         self.anim_dir = self.directions.nearest_to(self.anim_dir, dir);
         let anim_name = Self::get_anim_name_for(self.anim_dir);
         if self.sprite.is_playing() {
@@ -92,7 +92,7 @@ impl CharacterSprite2D {
         }
     }
 
-    pub(super) fn ensure_playing(&mut self) {
+    pub fn ensure_playing(&mut self) {
         if !self.sprite.is_playing() {
             self.sprite.play();
             if let Some((fr, pr)) = self.prev_fr_pr.take() {
@@ -101,7 +101,7 @@ impl CharacterSprite2D {
         }
     }
 
-    pub(super) fn ensure_stopped(&mut self) {
+    pub fn ensure_stopped(&mut self) {
         if self.sprite.is_playing() {
             self.prev_fr_pr = Some((self.sprite.get_frame(), self.sprite.get_frame_progress()));
             self.sprite.stop();

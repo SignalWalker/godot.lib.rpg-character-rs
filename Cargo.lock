@@ -340,6 +340,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "godot",
+ "godot-utils",
  "scene-manager",
  "thiserror",
  "tracing",

@@ -3,11 +3,13 @@ use godot::{
         Node, PhysicsDirectSpaceState2D, PhysicsRayQueryParameters2D, World2D,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
-            ZipReader::{Variant, array},
+            ZipReader::{Dictionary, Variant, array},
         },
     },
     obj::{WithBaseField, WithUserSignals},
 };
+
+use crate::InteractHandler;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum InteractError {
@@ -20,13 +22,33 @@ pub(super) enum InteractError {
 }
 
 impl super::RpgCharacter2d {
+    fn interact_with(&mut self, target: &mut Gd<Node>, raycast_data: Dictionary<Variant, Variant>) {
+        let mut interacted = false;
+        // for every InteractHandler held by the interactee...
+        for handler in target
+            .get_children()
+            .iter_shared()
+            .filter_map(|child| child.try_cast::<InteractHandler>().ok())
+        {
+            // check whether we can interact with it...
+            if InteractHandler::can_interact(handler.clone(), self.to_gd(), raycast_data.clone()) {
+                // and then interact with it
+                interacted = true;
+                InteractHandler::on_interact(handler.clone(), self.to_gd(), raycast_data.clone());
+            }
+        }
+        if interacted {
+            // ...and then tell everyone that we interacted with something
+            self.signals()
+                .interacted_with()
+                .emit(&*target, &raycast_data.into_read_only());
+        }
+    }
+
     /// # Safety
     ///
     /// Must only be called during physics processing.
     pub(super) unsafe fn interact(&mut self) -> Result<(), InteractError> {
-        const CAN_INTERACT_FN: &str = "rpg_can_interact";
-        const ON_INTERACT_FN: &str = "rpg_on_interact";
-
         let Some(world) = self.base().get_world_2d() else {
             return Err(InteractError::MissingWorld);
         };
@@ -56,28 +78,10 @@ impl super::RpgCharacter2d {
             return Ok(());
         }
 
-        let mut t = result.at("collider").to::<Gd<Node>>();
-        // if we're allowed to interact with it (either it doesn't have can_interact() or it does
-        // and it returns true)...
-        if !t.has_method(CAN_INTERACT_FN)
-            || t.call(
-                CAN_INTERACT_FN,
-                &[Variant::from(self.to_gd()), Variant::from(result.clone())],
-            )
-            .booleanize()
-        {
-            // ...do any special interactions...
-            if t.has_method(ON_INTERACT_FN) {
-                t.call(
-                    ON_INTERACT_FN,
-                    &[Variant::from(self.to_gd()), Variant::from(result.clone())],
-                );
-            }
-            // ...and then tell everyone that we interacted with something
-            self.signals()
-                .interacted_with()
-                .emit(&t, &result.into_read_only());
-        }
+        tracing::trace!(%result, "interacting...");
+
+        let mut target = result.at("collider").to::<Gd<Node>>();
+        self.interact_with(&mut target, result);
 
         Ok(())
     }

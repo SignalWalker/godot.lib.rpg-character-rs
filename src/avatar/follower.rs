@@ -5,7 +5,7 @@ use godot::classes::{
     class_macros::private::virtuals::{Xrvrs::Gd, ZipReader::Vector2},
 };
 
-use crate::{RpgDirection, avatar::CharacterSprite2D};
+use crate::{RpgDirection, avatar::CharacterSprite2d};
 
 // #[derive(Debug, thiserror::Error)]
 // enum FollowerError {
@@ -20,7 +20,7 @@ pub(super) struct FollowerFrame {
 }
 
 enum FollowerNode {
-    AnimatedSprite2D(CharacterSprite2D),
+    AnimatedSprite2D(CharacterSprite2d),
     Node2d(Gd<Node2D>),
 }
 
@@ -37,7 +37,7 @@ impl FollowerNode {
     fn from_gd(node: Gd<Node2D>) -> Self {
         match node.try_cast::<AnimatedSprite2D>() {
             Ok(sprite) => {
-                Self::AnimatedSprite2D(CharacterSprite2D::new(sprite, RpgDirection::South))
+                Self::AnimatedSprite2D(CharacterSprite2d::new(sprite, RpgDirection::South))
             }
             Err(n) => Self::Node2d(n),
         }
