@@ -4,17 +4,22 @@ use godot::{
         character_body_2d::MotionMode,
         class_macros::private::virtuals::{
             Xrvrs::Gd,
-            ZipReader::{VarDictionary, Variant, Vector2},
+            ZipReader::{VarDictionary, Vector2},
         },
+        object::ConnectFlags,
     },
-    obj::{Base, Singleton, WithBaseField},
+    obj::{Base, Singleton, WithBaseField, WithUserSignals},
     register::{
         GodotClass, godot_api,
         info::{PropertyInfo, PropertyUsageFlags},
     },
 };
+use godot_utils::DropHandle;
 
-use crate::{RpgDirection, avatar::follower::FollowerSet, character_sprite::CharacterSprite2d};
+use crate::{
+    AnimatedSpriteExt, AnimationResumeData, DirectionalSprite2D, RpgDirection,
+    avatar::follower::FollowerSet,
+};
 
 mod interact;
 
@@ -75,12 +80,16 @@ pub struct RpgCharacter2d {
     /// whether an interact raycast is queued for the next physics process
     interact_queued: bool,
 
-    sprite: Option<CharacterSprite2d>,
-
     /// The number of frames for which we've been moving without stopping
     acceleration_accumulator: u32,
 
     followers: FollowerSet,
+
+    sprite: Option<Gd<DirectionalSprite2D>>,
+    sprite_resume_data: Option<AnimationResumeData>,
+
+    _sprite_exit_handle: DropHandle,
+    _child_enter_handle: DropHandle,
 }
 
 impl RpgCharacter2d {
@@ -90,6 +99,42 @@ impl RpgCharacter2d {
             self.acceleration_speed
         } else {
             self.move_speed
+        }
+    }
+
+    fn connect_sprite_signals(&mut self, sprite: &Gd<DirectionalSprite2D>) {
+        fn sprite_exiting(av: &mut RpgCharacter2d) {
+            av.sprite = None;
+        }
+        self._sprite_exit_handle = sprite
+            .signals()
+            .tree_exiting()
+            .builder()
+            .flags(ConnectFlags::ONE_SHOT)
+            .connect_other_mut(self, sprite_exiting)
+            .into();
+    }
+
+    pub(crate) fn register_directional_sprite(&mut self, sprite: Gd<DirectionalSprite2D>) {
+        self._child_enter_handle.disconnect();
+        self.connect_sprite_signals(&sprite);
+        self.sprite = Some(sprite);
+    }
+
+    pub(crate) fn connect_signals(&mut self) {
+        fn child_entered_tree(av: &mut RpgCharacter2d, child: Gd<Node>) {
+            if let Ok(sprite) = child.try_cast::<DirectionalSprite2D>() {
+                av.register_directional_sprite(sprite);
+            }
+        }
+        if let Some(sprite) = self.sprite.clone() {
+            self.connect_sprite_signals(&sprite);
+        } else {
+            self._child_enter_handle = self
+                .signals()
+                .child_entered_tree()
+                .connect_self(child_entered_tree)
+                .into();
         }
     }
 }
@@ -104,7 +149,7 @@ impl RpgCharacter2d {
     pub fn set_facing_dir(&mut self, dir: RpgDirection) {
         self.facing_dir = dir;
         if let Some(sprite) = self.sprite.as_mut() {
-            sprite.set_dir(dir);
+            sprite.bind_mut().set_direction(self.facing_dir);
         }
     }
 
@@ -137,6 +182,7 @@ impl ICharacterBody2D for RpgCharacter2d {
             self.base_mut().add_to_group("avatar");
         }
         self.base_mut().set_motion_mode(MotionMode::FLOATING);
+        self.connect_signals();
     }
 
     fn on_validate_property(&self, info: &mut PropertyInfo) {
@@ -145,35 +191,28 @@ impl ICharacterBody2D for RpgCharacter2d {
         }
     }
 
-    fn ready(&mut self) {
-        // TODO :: sprite
-
-        if let Some(sprite) = self
-            .base()
-            .get_children()
-            .iter_shared()
-            .find_map(|child| child.try_cast::<AnimatedSprite2D>().ok())
-        {
-            let sprite = CharacterSprite2d::new(sprite, self.facing_dir);
-            self.sprite = Some(sprite);
-        }
-    }
-
     fn unhandled_input(&mut self, event: Gd<InputEvent>) {
         let Some(mut vp) = self.base().get_viewport() else {
             return;
         };
-        if event.is_action_pressed("toggle_menu") {
-            tracing::error!("todo: toggle menu");
-            vp.set_input_as_handled();
-        } else if event.is_action_pressed("interact") {
+        if event.is_action_pressed("interact") {
             self.interact_queued = true;
             vp.set_input_as_handled();
         }
     }
 
     fn physics_process(&mut self, _delta: f32) {
-        const ON_COLLISION_FN: &str = "rpg_on_character_collision";
+        fn _handle_collisions(av: &mut RpgCharacter2d) {
+            // const ON_COLLISION_FN: &str = "rpg_on_character_collision";
+            for _collider in (0..av.base().get_slide_collision_count()).filter_map(|index| {
+                av.base()
+                    .get_slide_collision(index)
+                    .and_then(|collision| collision.get_collider())
+                    .and_then(|collider| collider.try_cast::<Node>().ok())
+            }) {
+                // nothing...
+            }
+        }
 
         if self.interact_queued {
             self.interact_queued = false;
@@ -187,15 +226,23 @@ impl ICharacterBody2D for RpgCharacter2d {
 
         let old_pos = self.base().get_global_position();
 
-        // update velocity & sprite
+        // update velocity
         if godot::global::is_zero_approx(input_vec.length() as f64) {
             // we're not trying to move
             self.base_mut().set_velocity(Vector2::ZERO);
             // update acceleration accumulator
             self.acceleration_accumulator = 0;
             // update sprite
-            if let Some(sprite) = self.sprite.as_mut() {
-                sprite.ensure_stopped();
+            if let Some(sprite) = self.sprite.as_mut()
+                && sprite.is_playing()
+            {
+                self.sprite_resume_data = Some(
+                    sprite
+                        .clone()
+                        .upcast::<AnimatedSprite2D>()
+                        .stop_with_resume_data(),
+                );
+                sprite.set_frame(1);
             }
         } else {
             // we're trying to move
@@ -208,45 +255,28 @@ impl ICharacterBody2D for RpgCharacter2d {
             self.acceleration_accumulator = self.acceleration_accumulator.saturating_add(1);
             // update sprite
             if let Some(sprite) = self.sprite.as_mut() {
-                sprite.set_dir(self.facing_dir);
-                sprite.ensure_playing();
+                sprite.bind_mut().set_direction(self.facing_dir);
+                if !sprite.is_playing() {
+                    if let Some(resume_data) = self.sprite_resume_data.take() {
+                        sprite
+                            .clone()
+                            .upcast::<AnimatedSprite2D>()
+                            .resume(resume_data);
+                    } else {
+                        sprite.play();
+                    }
+                }
             }
         }
 
         // move the character
         if self.base_mut().move_and_slide() {
-            // handle collisions
-            for collision in (0..self.base().get_slide_collision_count()).map(|index| {
-                self.base()
-                    .get_slide_collision(index)
-                    .expect("this should only fail if we messed up the slide collision range")
-            }) {
-                let Some(mut collider) = collision
-                    .get_collider()
-                    .and_then(|col| col.try_cast::<Node>().ok())
-                else {
-                    continue;
-                };
-                // if the thing we collided with has an on_collision function, call that
-                if collider.has_method(ON_COLLISION_FN) {
-                    collider.call(
-                        ON_COLLISION_FN,
-                        &[Variant::from(self.to_gd()), Variant::from(collision)],
-                    );
-                }
-            }
+            // handle_collisions(self);
         }
 
         // update followers
         let new_pos = self.base().get_global_position();
-        let mv_vec = new_pos - old_pos;
-        if mv_vec.length_squared()
-            < Vector2::new(
-                std::f32::consts::FRAC_1_SQRT_2,
-                std::f32::consts::FRAC_1_SQRT_2,
-            )
-            .length_squared()
-        {
+        if (new_pos - old_pos).length_squared() < 1.0 {
             // we didn't actually move (even if we tried), so let's have everybody take a break
             self.followers.stop();
         } else {

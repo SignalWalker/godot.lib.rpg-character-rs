@@ -208,7 +208,6 @@ dependencies = [
 [[package]]
 name = "godot-utils"
 version = "0.1.0"
-source = "git+https://github.com/SignalWalker/godot.lib.godot-utils#1022d202a6d0d2a4de6ab5548a6d191979ceea5b"
 dependencies = [
  "godot",
 ]

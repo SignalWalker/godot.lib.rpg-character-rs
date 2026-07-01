@@ -100,7 +100,6 @@ impl Warp2d {
         // reposition
         av.set_global_position(target.get_global_position());
         if self.rotate {
-            // redirect
             av.bind_mut()
                 .set_facing_dir(RpgDirection::from_radians(target.get_global_rotation()));
         }

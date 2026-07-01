@@ -9,7 +9,7 @@ use godot::{
 };
 use godot_utils::DropHandle;
 
-use crate::{CharacterSprite2d, RpgCharacter2d, RpgDirection};
+use crate::{DirectionalSprite2D, RpgCharacter2d, RpgDirection};
 
 #[derive(GodotClass)]
 #[class(tool, init, base = StaticBody2D, rename = StaticNpc2D)]
@@ -20,7 +20,7 @@ pub struct StaticNpc2d {
     #[var(pub, set)]
     facing_dir: RpgDirection,
 
-    sprite: Option<CharacterSprite2d>,
+    sprite: Option<DirectionalSprite2D>,
 
     child_enter_handle: DropHandle,
     sprite_exit_handle: DropHandle,

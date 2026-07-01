@@ -1,17 +1,11 @@
 use std::collections::VecDeque;
 
 use godot::classes::{
-    AnimatedSprite2D, Node2D,
+    Node2D,
     class_macros::private::virtuals::{Xrvrs::Gd, ZipReader::Vector2},
 };
 
-use crate::{RpgDirection, avatar::CharacterSprite2d};
-
-// #[derive(Debug, thiserror::Error)]
-// enum FollowerError {
-//     #[error("expected AnimatedSprite2D or Node2D, found {0}")]
-//     UnrecognizedType(Gd<Node2D>),
-// }
+use crate::{AnimatedSpriteExt, AnimationResumeData, DirectionalSprite2D, RpgDirection};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct FollowerFrame {
@@ -20,14 +14,17 @@ pub(super) struct FollowerFrame {
 }
 
 enum FollowerNode {
-    AnimatedSprite2D(CharacterSprite2d),
+    DirectionalSprite2D {
+        sprite: Gd<DirectionalSprite2D>,
+        resume_data: Option<AnimationResumeData>,
+    },
     Node2d(Gd<Node2D>),
 }
 
 impl std::fmt::Display for FollowerNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FollowerNode::AnimatedSprite2D(sprite) => sprite.sprite.fmt(f),
+            FollowerNode::DirectionalSprite2D { sprite, .. } => sprite.fmt(f),
             FollowerNode::Node2d(n) => n.fmt(f),
         }
     }
@@ -35,28 +32,41 @@ impl std::fmt::Display for FollowerNode {
 
 impl FollowerNode {
     fn from_gd(node: Gd<Node2D>) -> Self {
-        match node.try_cast::<AnimatedSprite2D>() {
-            Ok(sprite) => {
-                Self::AnimatedSprite2D(CharacterSprite2d::new(sprite, RpgDirection::South))
-            }
+        match node.try_cast::<DirectionalSprite2D>() {
+            Ok(sprite) => Self::DirectionalSprite2D {
+                sprite,
+                resume_data: None,
+            },
             Err(n) => Self::Node2d(n),
         }
     }
 
-    fn apply_frame(&mut self, pos: FollowerFrame) {
+    fn apply_frame(&mut self, frame: FollowerFrame) {
         match self {
-            FollowerNode::AnimatedSprite2D(sprite) => {
-                sprite.set_dir(pos.facing);
-                sprite.ensure_playing();
-                sprite.sprite.set_global_position(pos.position);
+            FollowerNode::DirectionalSprite2D {
+                sprite,
+                resume_data,
+            } => {
+                sprite.bind_mut().set_direction(frame.facing);
+                if let Some(resume_data) = resume_data.take() {
+                    sprite.resume(resume_data);
+                } else {
+                    sprite.play();
+                }
+                sprite.set_global_position(frame.position);
             }
-            FollowerNode::Node2d(n) => n.set_global_position(pos.position),
+            FollowerNode::Node2d(n) => n.set_global_position(frame.position),
         }
     }
 
     fn stop(&mut self) {
-        if let Self::AnimatedSprite2D(c) = self {
-            c.ensure_stopped()
+        if let Self::DirectionalSprite2D {
+            sprite,
+            resume_data,
+        } = self
+        {
+            *resume_data = Some(sprite.stop_with_resume_data());
+            sprite.set_frame(1);
         }
     }
 }

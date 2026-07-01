@@ -145,10 +145,8 @@ impl SceneWarp2d {
         // reposition
         av.set_global_position(target.get_global_position());
         // redirect
-        let rotation = target.get_global_rotation();
-        let direction = RpgDirection::from_radians(rotation);
-        tracing::trace!(%rotation, ?direction, "marker");
-        av.bind_mut().set_facing_dir(direction);
+        av.bind_mut()
+            .set_facing_dir(RpgDirection::from_radians(target.get_global_rotation()));
     }
 
     fn warp_with_transition(

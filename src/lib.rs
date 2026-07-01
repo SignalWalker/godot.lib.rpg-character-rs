@@ -13,8 +13,11 @@ pub use util::*;
 mod interact;
 pub use interact::*;
 
-mod npc;
-pub use npc::*;
-
 mod character_sprite;
 pub use character_sprite::*;
+
+// mod npc;
+// pub use npc::*;
+
+mod directional_sprite;
+pub use directional_sprite::*;

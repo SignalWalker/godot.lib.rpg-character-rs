@@ -1,4 +1,7 @@
-use godot::register::{GodotClass, godot_api};
+use godot::{
+    classes::class_macros::private::virtuals::ZipReader::Vector2,
+    register::{GodotClass, godot_api},
+};
 
 use super::RpgDirection;
 
@@ -25,4 +28,19 @@ impl RpgDirectionGd {
     const NORTH: RpgDirection = RpgDirection::North;
     #[constant]
     const NORTH_EAST: RpgDirection = RpgDirection::NorthEast;
+
+    #[func]
+    fn from_vector(vec: Vector2) -> RpgDirection {
+        RpgDirection::from_vec(vec)
+    }
+
+    #[func]
+    fn from_radians(rad: f32) -> RpgDirection {
+        RpgDirection::from_radians(rad)
+    }
+
+    #[func]
+    fn to_vector(dir: RpgDirection) -> Vector2 {
+        dir.to_vector()
+    }
 }
